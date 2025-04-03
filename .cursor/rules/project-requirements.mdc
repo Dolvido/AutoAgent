@@ -1,0 +1,96 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# AutoCritic: Self-Improving Coding Critique Agent
+
+## system.name
+AutoCritic
+
+## system.purpose
+AI-powered coding assistant that critiques developer code, learns from user feedback, and adapts its feedback strategies over time. Runs fully offline with local LLMs and vector memory.
+
+---
+
+## feature.input.code_paste
+- Accept raw code or Git-style diff as input.
+- Supported formats: pasted text, uploaded file (.py, .js, etc.).
+- Auto-detect language from file extension or content.
+
+## feature.input.ui
+- Web interface with code editor (Monaco or Ace).
+- "Critique" button triggers LLM agent evaluation.
+- Language toggle (optional).
+
+## feature.agent.langchain
+- LangChain Runnable chain or Tool.
+- Chain receives input: {code, language}.
+- Executes 3 steps: summarize, identify issues, suggest fixes.
+
+## feature.llm.local
+- Use Ollama to run Mistral/CodeLLaMA/Gemma locally.
+- LLM temperature configurable (0.3 default).
+- Return raw and structured critique.
+
+## feature.prompt.template
+- Use few-shot prompt format:
+  - Summarize the code
+  - Identify 2–3 issues (clarity, structure, best practices)
+  - Suggest actionable improvements (no rewrites unless requested)
+
+## feature.output.ui_feedback
+- Display critique in collapsible cards:
+  - Fields: issue, reason, fix suggestion.
+- Buttons: Accept | Ignore | Copy Fix | Regenerate.
+
+## feature.feedback.logging
+- Log each session:
+  - Input code, critique, timestamp.
+  - User action (accepted, rejected, ignored).
+- Store in JSON or SQLite.
+
+## feature.memory.embedding
+- Embed past critique entries (code + feedback).
+- Use FAISS or Chroma as vector DB.
+- On new input, retrieve top-K similar snippets.
+- Inject prior suggestions into prompt context.
+
+## feature.meta_agent.prompt_tuner
+- Periodically evaluate feedback logs.
+- Score prompts based on accept rate.
+- Replace/adjust underperforming prompt chains.
+
+## feature.self_improvement.criteria
+- Feedback loop success if:
+  - % accepted critiques increases over time.
+  - Suggestions become more relevant (lower ignore rate).
+- Log tuning history.
+
+## feature.export
+- Export critique to Markdown or JSON.
+- Optional: Git patch suggestion (future).
+
+## feature.persistence
+- Store critiques and logs across sessions.
+- Optional: user profile with preferences.
+
+---
+
+## constraints
+- No paid APIs.
+- Must run entirely offline.
+- No cloud storage or external telemetry.
+
+## tech.stack
+- Frontend: Next.js + Tailwind + shadcn/ui + Monaco
+- Backend: LangChain + FastAPI (or local Flask server)
+- Memory: FAISS/Chroma
+- LLM: Ollama + open models
+- Storage: JSON or SQLite
+
+## bonus.features
+- VSCode extension integration
+- Dark mode toggle
+- Role-based critique tone (junior/dev lead)
