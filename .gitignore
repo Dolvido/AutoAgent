@@ -61,3 +61,6 @@ ollama_models/
 # Logs
 logs/
 *.log
+
+# Transient data
+data/
