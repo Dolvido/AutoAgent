@@ -1,7 +1,7 @@
 from graphviz import Digraph
 
-# Create architecture diagram for the self-improving AutoCritic agent
-dot = Digraph(comment='AutoCritic: Self-Improving Coding Agent Architecture')
+# Create architecture diagram for the self-improving AutoAgent agent
+dot = Digraph(comment='AutoAgent: Self-Improving Coding Agent Architecture')
 
 # User interaction
 dot.node('A', 'Code Input (UI)', shape='box')
@@ -29,5 +29,5 @@ dot.edge('H', 'I', label='Analyze Usage Logs')
 dot.edge('I', 'C', label='Update Prompt Strategy')
 
 # Render the diagram
-dot.render('/mnt/data/autocritic_architecture', format='png', cleanup=False)
-'/mnt/data/autocritic_architecture.png'
+dot.render('/mnt/data/autoagent_architecture', format='png', cleanup=False)
+'/mnt/data/autoagent_architecture.png'

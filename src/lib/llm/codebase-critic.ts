@@ -36,12 +36,14 @@ interface CodebaseCritiqueOptions {
 }
 
 // System prompt for codebase analysis
-const CODEBASE_ANALYSIS_PROMPT = `You are an expert software architect tasked with analyzing an entire codebase. You'll be provided with:
+const CODEBASE_ANALYSIS_PROMPT = `YOU MUST RESPOND WITH RAW JSON ONLY! No text or explanations before or after the JSON!
+
+You are an expert software architect tasked with analyzing an entire codebase. You'll be provided with:
 1. A summary of the codebase structure and stats
 2. Key files and their relationships
 3. A focus file (if specified)
 
-Provide a comprehensive analysis in JSON format that includes:
+Your response MUST ONLY contain a valid JSON object with this exact structure:
 {
   "summary": "Brief overview of what the codebase does",
   "overallAssessment": "General assessment of code quality, architecture, and organization",
@@ -68,6 +70,8 @@ Guidelines:
 - Suggest improvements that respect the existing architecture
 - For each issue, consider impacts across multiple files
 - Prioritize actionable feedback
+
+IMPORTANT: ANY text outside the JSON object will cause errors. Do NOT include markdown code blocks, explanations, or any other text.
 `;
 
 // Generate a codebase critique using the LLM
@@ -76,22 +80,44 @@ async function generateCodebaseCritique(
   relevantFiles: CodeFile[],
   options: CodebaseCritiqueOptions
 ): Promise<CodebaseCritiqueResult> {
-  try {
-    // Create Ollama client
-    const model = options.model || 'codellama';
-    const temperature = options.temperature || 0.3;
-    
-    const ollama = new Ollama({
-      baseUrl: 'http://localhost:11434',
-      model: model,
-      temperature: temperature,
-    });
-    
-    // Generate codebase summary
-    const codebaseSummary = summarizeCodebase(codebaseAnalysis);
-    
-    // Build the prompt
-    const prompt = `${CODEBASE_ANALYSIS_PROMPT}
+  let attempts = 0;
+  const maxAttempts = 3; // Maximum number of retry attempts
+  let lastResponse = "";
+  let lastError = null;
+
+  while (attempts < maxAttempts) {
+    try {
+      // Create Ollama client
+      const model = options.model || 'codellama';
+      
+      // On retry attempts, significantly lower the temperature
+      const temperature = attempts > 0 
+        ? 0.05 // Lower temperature on retry for more deterministic output
+        : (options.temperature || 0.3);
+      
+      console.log(`LLM attempt ${attempts + 1}/${maxAttempts} with temperature ${temperature}`);
+      
+      const ollama = new Ollama({
+        baseUrl: 'http://localhost:11434',
+        model: model,
+        temperature: temperature,
+      });
+      
+      // Generate codebase summary
+      const codebaseSummary = summarizeCodebase(codebaseAnalysis);
+      
+      // Build the prompt with explicit feedback on retry
+      let prompt;
+      if (attempts > 0) {
+        prompt = `${CODEBASE_ANALYSIS_PROMPT}
+
+I previously asked you to provide a codebase critique in valid JSON format, but your response was not valid JSON. Please try again.
+
+Previous response: ${lastResponse.substring(0, 200)}${lastResponse.length > 200 ? '...' : ''}
+
+Error: ${lastError instanceof Error ? lastError.message : 'Invalid JSON format'}
+
+IMPORTANT: YOUR RESPONSE MUST BE RAW JSON ONLY. DO NOT INCLUDE ANY TEXT, EXPLANATIONS, OR MARKDOWN CODE BLOCKS.
 
 Codebase Summary:
 ${codebaseSummary}
@@ -106,45 +132,76 @@ ${relevantFiles.map(file => `--- ${file.relativePath} ---\n${file.content.substr
 
 Analyze the relationships between these files and identify cross-cutting issues and patterns.
 Return your analysis as a valid JSON object matching the schema.`;
+      } else {
+        prompt = `${CODEBASE_ANALYSIS_PROMPT}
 
-    // Call the model
-    const response = await ollama.call(prompt);
-    
-    // Parse the JSON response
-    try {
-      // Extract JSON part from the response (sometimes the model adds text outside the JSON)
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : response;
+Codebase Summary:
+${codebaseSummary}
+
+Relevant Files (${relevantFiles.length}):
+${relevantFiles.map(file => `- ${file.relativePath} (${file.language})`).join('\n')}
+
+${options.focusFile ? `Focus File: ${options.focusFile}` : ''}
+
+File Contents:
+${relevantFiles.map(file => `--- ${file.relativePath} ---\n${file.content.substring(0, 1000)}${file.content.length > 1000 ? '...(truncated)' : ''}`).join('\n\n')}
+
+Analyze the relationships between these files and identify cross-cutting issues and patterns.
+Return your analysis as a valid JSON object matching the schema.`;
+      }
+
+      // Call the model
+      const response = await ollama.call(prompt);
+      lastResponse = response;
       
-      const critiqueResponse = JSON.parse(jsonStr);
-      
-      // Add UUIDs to issues
-      const issues = critiqueResponse.issues.map((issue: any) => ({
-        ...issue,
-        id: uuidv4()
-      }));
-      
-      // Construct the final critique result
-      const critiqueResult: CodebaseCritiqueResult = {
-        id: uuidv4(),
-        summary: critiqueResponse.summary || '',
-        overallAssessment: critiqueResponse.overallAssessment || '',
-        architectureReview: critiqueResponse.architectureReview || '',
-        issues: issues,
-        patterns: critiqueResponse.patterns || { positive: [], negative: [] },
-        timestamp: new Date().toISOString()
-      };
-      
-      return critiqueResult;
-    } catch (parseError) {
-      console.error("Failed to parse LLM response as JSON:", parseError);
-      console.log("Raw response:", response);
-      throw new Error("LLM response format error");
+      // Parse the JSON response
+      try {
+        // Extract JSON part from the response (sometimes the model adds text outside the JSON)
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : response;
+        
+        const critiqueResponse = JSON.parse(jsonStr);
+        
+        // Add UUIDs to issues
+        const issues = critiqueResponse.issues.map((issue: any) => ({
+          ...issue,
+          id: uuidv4()
+        }));
+        
+        // Construct the final critique result
+        const critiqueResult: CodebaseCritiqueResult = {
+          id: uuidv4(),
+          summary: critiqueResponse.summary || '',
+          overallAssessment: critiqueResponse.overallAssessment || '',
+          architectureReview: critiqueResponse.architectureReview || '',
+          issues: issues,
+          patterns: critiqueResponse.patterns || { positive: [], negative: [] },
+          timestamp: new Date().toISOString()
+        };
+        
+        return critiqueResult;
+      } catch (parseError) {
+        console.error(`Attempt ${attempts + 1}/${maxAttempts}: Failed to parse LLM response as JSON:`, parseError);
+        console.log("Raw response:", response);
+        
+        lastError = parseError;
+        attempts++;
+        
+        // If this was the last attempt, throw the error
+        if (attempts >= maxAttempts) {
+          throw new Error(`LLM response format error after ${maxAttempts} attempts`);
+        }
+        // Otherwise continue to the next attempt
+        continue;
+      }
+    } catch (error) {
+      console.error(`Attempt ${attempts + 1}/${maxAttempts}: Error generating codebase critique:`, error);
+      throw error;
     }
-  } catch (error) {
-    console.error("Error generating codebase critique:", error);
-    throw error;
   }
+  
+  // This should never be reached due to the throw in the loop, but TypeScript needs it
+  throw new Error(`LLM response format error after ${maxAttempts} attempts`);
 }
 
 // Mock implementation for when Ollama is unavailable
@@ -202,48 +259,3 @@ function mockCodebaseCritique(
     timestamp: new Date().toISOString()
   };
 }
-
-// Main function to critique a codebase
-export async function critiqueCodebase(
-  codebaseAnalysis: CodebaseAnalysis,
-  options: CodebaseCritiqueOptions = {}
-): Promise<CodebaseCritiqueResult> {
-  try {
-    // If a focus file is specified, extract relevant files around it
-    // Otherwise, limit to a reasonable number of files
-    let relevantFiles: CodeFile[];
-    
-    if (options.focusFile) {
-      relevantFiles = extractRelevantFiles(
-        codebaseAnalysis,
-        options.focusFile,
-        options.depth || 2
-      );
-    } else {
-      // Sort files by size (smallest first) and take a subset
-      relevantFiles = [...codebaseAnalysis.files]
-        .sort((a, b) => a.size - b.size)
-        .slice(0, options.maxFiles || 20);
-    }
-    
-    let critiqueResult: CodebaseCritiqueResult;
-    
-    try {
-      // Try to use Ollama
-      critiqueResult = await generateCodebaseCritique(
-        codebaseAnalysis,
-        relevantFiles,
-        options
-      );
-    } catch (ollmaError) {
-      console.warn("Failed to use Ollama for codebase critique, falling back to mock:", ollmaError);
-      // Fall back to mock implementation
-      critiqueResult = mockCodebaseCritique(codebaseAnalysis, relevantFiles);
-    }
-    
-    return critiqueResult;
-  } catch (error) {
-    console.error("Error generating codebase critique:", error);
-    throw error;
-  }
-} 

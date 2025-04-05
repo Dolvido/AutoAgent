@@ -1,4 +1,4 @@
-# AutoCritic
+# AutoAgent
 
 An offline AI-powered coding critique assistant that provides structured feedback on your code with a self-improving learning loop based on user feedback.
 
@@ -71,7 +71,7 @@ This project uses the following technologies:
 
 ## Configuration
 
-AutoCritic can be configured by modifying the following:
+AutoAgent can be configured by modifying the following:
 
 - **LLM Model**: Change the model in `src/lib/llm/critic.ts` (default: `codellama`)
 - **Embedding Model**: Change the model in `src/lib/db/vector-store.ts` (default: `llama3`)
@@ -117,7 +117,7 @@ auto-critic/
 
 ## Offline Usage
 
-AutoCritic is fully offline and doesn't require an internet connection after installation and model download. All data stays on your machine.
+AutoAgent is fully offline and doesn't require an internet connection after installation and model download. All data stays on your machine.
 
 ## License
 

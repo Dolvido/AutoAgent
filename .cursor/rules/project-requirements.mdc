@@ -4,10 +4,10 @@ globs:
 alwaysApply: true
 ---
 
-# AutoCritic: Self-Improving Coding Critique Agent
+# AutoAgent: Self-Improving Coding Critique Agent
 
 ## system.name
-AutoCritic
+AutoAgent
 
 ## system.purpose
 AI-powered coding assistant that critiques developer code, learns from user feedback, and adapts its feedback strategies over time. Runs fully offline with local LLMs and vector memory.

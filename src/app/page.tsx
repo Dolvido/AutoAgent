@@ -4,6 +4,7 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import CritiqueResults, { CritiqueResult } from "../components/CritiqueResults";
 import FileUpload from "../components/FileUpload";
+import Navigation from "../components/Navigation";
 
 // Dynamically import CodeEditor with no SSR to prevent hydration issues
 const CodeEditor = dynamic(() => import("../components/CodeEditor"), {
@@ -16,6 +17,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [critique, setCritique] = useState<CritiqueResult | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [directoryHandle, setDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
 
   // Toggle dark mode
   const toggleDarkMode = () => {
@@ -140,12 +142,7 @@ export default function Home() {
                 />
               </svg>
             </button>
-            <a 
-              href="/codebase"
-              className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-            >
-              Codebase Analysis
-            </a>
+            <Navigation currentPage="home" />
           </div>
         </div>
       </header>
@@ -207,6 +204,21 @@ export default function Home() {
               />
             </div>
           </div>
+        </div>
+
+        {/* Browse Directory Method Card */}
+        <div className="border rounded-lg p-4">
+          <h3 className="font-medium mb-2">Browse Directory</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+            Select a directory on your computer (Chrome/Edge only, uses File System Access API).
+          </p>
+          {directoryHandle ? (
+            <div className="text-sm text-green-700 dark:text-green-400">
+              Directory already selected and ready for analysis!
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 dark:text-gray-500">Please use the main 'Analyze Selected Directory' button below once a directory is chosen via other means or if API is unavailable.</p>
+          )}
         </div>
       </main>
       

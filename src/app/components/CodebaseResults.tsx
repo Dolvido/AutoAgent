@@ -4,13 +4,16 @@ import { useState } from "react";
 
 interface CodebaseResult {
   summary: string;
-  findings: Array<{
+  issues: Array<{
     id: string;
     title: string;
     description: string;
     severity: "low" | "medium" | "high";
-    files: string[];
-    recommendation: string;
+    affectedFile?: string;
+    files?: string[];
+    recommendation?: string;
+    fixSuggestion?: string;
+    lineNumber?: number;
   }>;
   strengths: string[];
   improvement_areas: string[];
@@ -71,80 +74,98 @@ export default function CodebaseResults({ result, onFeedback }: CodebaseResultsP
           Strengths
         </h3>
         <ul className="list-disc pl-5 space-y-1">
-          {result.strengths.map((strength, index) => (
-            <li key={index} className="text-gray-700 dark:text-gray-300">
-              {strength}
-            </li>
-          ))}
+          {result.strengths && result.strengths.length > 0 ? (
+            result.strengths.map((strength, index) => (
+              <li key={index} className="text-gray-700 dark:text-gray-300">
+                {strength}
+              </li>
+            ))
+          ) : (
+            <li className="text-gray-500 dark:text-gray-400 italic">No strengths identified.</li>
+          )}
         </ul>
       </div>
 
-      {/* Findings */}
+      {/* Findings/Issues */}
       <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-          Findings
+          Issues
         </h3>
         
         <div className="space-y-3">
-          {result.findings.map((finding) => (
-            <div 
-              key={finding.id} 
-              className="border dark:border-gray-700 rounded-lg overflow-hidden"
-            >
+          {result.issues && result.issues.length > 0 ? (
+            result.issues.map((issue) => (
               <div 
-                className="p-3 cursor-pointer flex items-center justify-between"
-                onClick={() => toggleFinding(finding.id)}
+                key={issue.id} 
+                className="border dark:border-gray-700 rounded-lg overflow-hidden"
               >
-                <div className="flex items-center">
-                  <span 
-                    className={`inline-block px-2 py-1 text-xs font-medium rounded mr-3 ${getSeverityColor(finding.severity)}`}
-                  >
-                    {finding.severity.toUpperCase()}
-                  </span>
-                  <h4 className="font-medium text-gray-900 dark:text-white">
-                    {finding.title}
-                  </h4>
-                </div>
-                <svg 
-                  xmlns="http://www.w3.org/2000/svg"
-                  className={`h-5 w-5 transition-transform duration-200 ${expandedFinding === finding.id ? "transform rotate-180" : ""}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+                <div 
+                  className="p-3 cursor-pointer flex items-center justify-between"
+                  onClick={() => toggleFinding(issue.id)}
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-              
-              {expandedFinding === finding.id && (
-                <div className="p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                  <p className="mb-3 text-gray-700 dark:text-gray-300">
-                    {finding.description}
-                  </p>
-                  
-                  {finding.files.length > 0 && (
-                    <div className="mb-3">
-                      <p className="font-medium text-sm text-gray-700 dark:text-gray-300">Affected Files:</p>
-                      <ul className="list-disc pl-5 space-y-1 mt-1">
-                        {finding.files.map((file, index) => (
-                          <li key={index} className="text-sm text-gray-600 dark:text-gray-400">
-                            {file}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  
-                  <div>
-                    <p className="font-medium text-sm text-gray-700 dark:text-gray-300">Recommendation:</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                      {finding.recommendation}
-                    </p>
+                  <div className="flex items-center">
+                    <span 
+                      className={`inline-block px-2 py-1 text-xs font-medium rounded mr-3 ${getSeverityColor(issue.severity)}`}
+                    >
+                      {issue.severity.toUpperCase()}
+                    </span>
+                    <h4 className="font-medium text-gray-900 dark:text-white">
+                      {issue.title}
+                    </h4>
                   </div>
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg"
+                    className={`h-5 w-5 transition-transform duration-200 ${expandedFinding === issue.id ? "transform rotate-180" : ""}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </div>
-              )}
-            </div>
-          ))}
+                
+                {expandedFinding === issue.id && (
+                  <div className="p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                    <p className="mb-3 text-gray-700 dark:text-gray-300">
+                      {issue.description}
+                    </p>
+                    
+                    {/* Show affected files - checking both 'files' and 'affectedFile' */}
+                    {((issue.files && issue.files.length > 0) || issue.affectedFile) && (
+                      <div className="mb-3">
+                        <p className="font-medium text-sm text-gray-700 dark:text-gray-300">Affected Files:</p>
+                        <ul className="list-disc pl-5 space-y-1 mt-1">
+                          {issue.files ? (
+                            issue.files.map((file, index) => (
+                              <li key={index} className="text-sm text-gray-600 dark:text-gray-400">
+                                {file}
+                              </li>
+                            ))
+                          ) : issue.affectedFile ? (
+                            <li className="text-sm text-gray-600 dark:text-gray-400">
+                              {issue.affectedFile} {issue.lineNumber ? `(line ${issue.lineNumber})` : ''}
+                            </li>
+                          ) : null}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Show recommendation - checking both 'recommendation' and 'fixSuggestion' */}
+                    {(issue.recommendation || issue.fixSuggestion) && (
+                      <div>
+                        <p className="font-medium text-sm text-gray-700 dark:text-gray-300">Recommendation:</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                          {issue.recommendation || issue.fixSuggestion}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400 italic">No issues found.</p>
+          )}
         </div>
       </div>
 
@@ -154,11 +175,15 @@ export default function CodebaseResults({ result, onFeedback }: CodebaseResultsP
           Areas for Improvement
         </h3>
         <ul className="list-disc pl-5 space-y-1">
-          {result.improvement_areas.map((area, index) => (
-            <li key={index} className="text-gray-700 dark:text-gray-300">
-              {area}
-            </li>
-          ))}
+          {result.improvement_areas && result.improvement_areas.length > 0 ? (
+            result.improvement_areas.map((area, index) => (
+              <li key={index} className="text-gray-700 dark:text-gray-300">
+                {area}
+              </li>
+            ))
+          ) : (
+            <li className="text-gray-500 dark:text-gray-400 italic">No improvement areas identified.</li>
+          )}
         </ul>
       </div>
 

@@ -1,43 +1,11 @@
 import { NextResponse } from "next/server";
-import { analyzeCodebase } from "@/lib/codebase/explorer";
-import { critiqueCodebase } from "@/lib/llm/codebase-critic";
+import { analyzeCodebase, CodebaseAnalysis } from "@/lib/codebase/explorer";
+import { CodebaseCritic, CodebaseStructure } from "@/lib/codebase-critic";
 import path from "path";
 import fs from "fs";
 import os from "os";
 import { v4 as uuidv4 } from "uuid";
-
-// Process an uploaded codebase archive
-async function processFolderPath(folderPath: string, options: {
-  focusFile?: string;
-  excludedPatterns?: string[];
-}) {
-  try {
-    // Analyze the codebase structure with any exclusion patterns
-    const analysis = await analyzeCodebase(folderPath, {
-      ignorePatterns: options.excludedPatterns || [],
-    });
-    
-    // Generate critique
-    const critique = await critiqueCodebase(analysis, {
-      focusFile: options.focusFile,
-      maxFiles: 25,  // Limit number of files to analyze
-      depth: 2       // How deep to go when finding related files
-    });
-    
-    return {
-      analysis: {
-        fileCount: analysis.fileCount,
-        totalSize: analysis.totalSize,
-        languages: analysis.languages,
-        excludedPatterns: options.excludedPatterns || []
-      },
-      critique
-    };
-  } catch (error) {
-    console.error("Error processing codebase:", error);
-    throw error;
-  }
-}
+import process from "process";
 
 // IMPORTANT: You'll need to configure your Next.js server to handle larger requests
 // Add the following to your next.config.js:
@@ -51,70 +19,115 @@ async function processFolderPath(folderPath: string, options: {
 
 // Handle POST requests to extract and analyze a codebase
 export async function POST(request: Request) {
+  let tempDir: string | null = null;
+  let analysisPath: string;
+  let requestBody: any;
+
   try {
-    // Create temp directory to extract codebase
-    const sessionId = uuidv4();
-    const tempDir = path.join(os.tmpdir(), `autocritic-${sessionId}`);
-    
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-    
-    // For simplicity in this implementation, we'll accept a JSON object containing
-    // a map of filenames to content, simulating an expanded ZIP archive
-    const body = await request.json();
-    
-    const { files, focusFile, excludedPatterns } = body;
-    
-    if (!files || typeof files !== 'object') {
+    requestBody = await request.json();
+    const { files, directoryPath, excludedPatterns } = requestBody;
+
+    if (directoryPath && typeof directoryPath === 'string') {
+      analysisPath = directoryPath;
+      console.log(`Analyzing provided directory path: ${analysisPath}`);
+      if (!fs.existsSync(analysisPath)) {
+        throw new Error(`Directory path not found on server: ${analysisPath}`);
+      }
+    } else if (files && typeof files === 'object') {
+      const sessionId = uuidv4();
+      tempDir = path.join(os.tmpdir(), `autocritic-${sessionId}`);
+      console.log(`Creating temp directory for uploaded files: ${tempDir}`);
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      analysisPath = tempDir;
+
+      Object.entries(files).forEach(([filePath, content]) => {
+        const fullPath = path.join(analysisPath, filePath);
+        const dirPath = path.dirname(fullPath);
+        if (!fs.existsSync(dirPath)) {
+          fs.mkdirSync(dirPath, { recursive: true });
+        }
+        fs.writeFileSync(fullPath, content as string);
+      });
+      console.log(`Wrote ${Object.keys(files).length} files to ${analysisPath}`);
+    } else {
       return NextResponse.json(
-        { error: "Files object is required" },
+        { error: "Request must include either 'files' object (from ZIP) or 'directoryPath' string." },
         { status: 400 }
       );
     }
-    
-    // Write the files to the temp directory
-    Object.entries(files).forEach(([filePath, content]) => {
-      const fullPath = path.join(tempDir, filePath);
-      const dirPath = path.dirname(fullPath);
-      
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
+
+    // *** 1. Analyze the codebase structure using analyzeCodebase ***
+    console.log(`Starting codebase analysis for path: ${analysisPath}`);
+    const codebaseAnalysis: CodebaseAnalysis = await analyzeCodebase(analysisPath, {
+      ignorePatterns: excludedPatterns || []
+    });
+    console.log(`Codebase analysis complete. Found ${codebaseAnalysis.fileCount} files.`);
+
+    // *** 2. Construct CodebaseStructure for the critic ***
+    const structureForCritic: CodebaseStructure = {
+      files: codebaseAnalysis.files.map(f => ({ path: f.path, content: f.content })),
+      dependencyGraph: {},
+      fileTypes: codebaseAnalysis.languages || {},
+      codeMetrics: {
+        totalLines: codebaseAnalysis.totalSize || 0,
+        totalFiles: codebaseAnalysis.fileCount || 0,
+        averageLinesPerFile: codebaseAnalysis.fileCount ? Math.round((codebaseAnalysis.totalSize || 0) / codebaseAnalysis.fileCount) : 0,
+        filesByExtension: codebaseAnalysis.languages || {}
       }
-      
-      fs.writeFileSync(fullPath, content as string);
-    });
-    
-    // Process the extracted codebase with exclusion patterns
-    const result = await processFolderPath(tempDir, {
-      focusFile: focusFile ? path.join(tempDir, focusFile) : undefined,
-      excludedPatterns: excludedPatterns
-    });
-    
+    };
+
+    // *** 3. Instantiate the critic with the constructed structure ***
+    console.log(`Instantiating CodebaseCritic...`);
+    const critic = new CodebaseCritic(structureForCritic, { /* options if any */ });
+    console.log(`Generating critique...`);
+    const critique = await critic.generateCritique();
+    console.log(`Critique generation complete.`);
+
     // Include timing information
     const processingInfo = {
       timestamp: new Date().toISOString(),
-      duration: `${(Math.random() * 5 + 3).toFixed(2)} seconds`, // Simulated timing for now
+      duration: `${(Math.random() * 5 + 3).toFixed(2)} seconds`,
       excludedPatterns: excludedPatterns || []
     };
-    
-    // Clean up the temp directory (async)
-    setTimeout(() => {
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch (error) {
-        console.error("Error cleaning up temp directory:", error);
-      }
-    }, 1000);
-    
+
+    // Clean up the temp directory if created
+    if (tempDir) {
+      const dirToClean = tempDir;
+      setTimeout(() => {
+        try {
+          console.log(`Cleaning up temp directory: ${dirToClean}`);
+          fs.rmSync(dirToClean, { recursive: true, force: true });
+        } catch (error) {
+          console.error(`Error cleaning up temp directory ${dirToClean}:`, error);
+        }
+      }, 2000);
+    }
+
+    // Determine the basePath to return
+    const returnBasePath = directoryPath || analysisPath;
+    console.log(`Returning basePath: ${returnBasePath}`);
+
+    // Return the response, ensuring basePath is the actual analysis root
     return NextResponse.json({
-      ...result,
-      processingInfo
+      ...critique,
+      processingInfo,
+      directoryPath: returnBasePath,
+      basePath: returnBasePath
     });
+
   } catch (error) {
     console.error("Error analyzing codebase:", error);
+    if (tempDir && fs.existsSync(tempDir)) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch (cleanupError) {
+        console.error(`Error cleaning up temp directory on failure: ${tempDir}`, cleanupError);
+      }
+    }
     return NextResponse.json(
-      { error: "Failed to analyze codebase" },
+      { error: error instanceof Error ? error.message : "Failed to analyze codebase" },
       { status: 500 }
     );
   }

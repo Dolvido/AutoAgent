@@ -1,5 +1,5 @@
-# Setup Ollama script for AutoCritic
-# This script helps download the required Ollama models for AutoCritic
+# Setup Ollama script for AutoAgent
+# This script helps download the required Ollama models for AutoAgent
 
 # Check if Ollama is running
 function Test-OllamaRunning {
@@ -30,9 +30,9 @@ function Pull-OllamaModel {
 }
 
 # Main script
-Write-Host "AutoCritic Ollama Setup" -ForegroundColor Cyan
+Write-Host "AutoAgent Ollama Setup" -ForegroundColor Cyan
 Write-Host "======================" -ForegroundColor Cyan
-Write-Host "This script will help you set up the required models for AutoCritic."
+Write-Host "This script will help you set up the required models for AutoAgent."
 Write-Host ""
 
 # Check if Ollama is running
@@ -67,4 +67,4 @@ foreach ($model in $models) {
 }
 
 Write-Host "Setup complete!" -ForegroundColor Green
-Write-Host "You can now run AutoCritic with 'npm run dev'" -ForegroundColor Cyan 
+Write-Host "You can now run AutoAgent with 'npm run dev'" -ForegroundColor Cyan 

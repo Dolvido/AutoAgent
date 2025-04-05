@@ -204,7 +204,12 @@ async function saveVectorStore() {
 }
 
 // Add a code sample to the vector store
-export async function addToVectorStore(code: string, critiqueId: string, language: string) {
+export async function addToVectorStore(
+  code: string,
+  critiqueId: string,
+  language: string,
+  critique: any // Add critique parameter
+) {
   try {
     // Ensure vector store is initialized
     if (!vectorStore) {
@@ -216,12 +221,21 @@ export async function addToVectorStore(code: string, critiqueId: string, languag
     
     // Add metadata to each chunk
     const docsWithMetadata = chunks.map(chunk => {
+      // Limit critique size if necessary, store essential parts
+      const critiqueSummary = critique?.summary?.substring(0, 200) || 'No summary';
+      const critiqueIssuesCount = critique?.issues?.length || 0;
+
       return new Document({
         pageContent: chunk.pageContent,
         metadata: {
           ...chunk.metadata,
           critiqueId,
           timestamp: new Date().toISOString(),
+          // Add critique data to metadata
+          critiqueSummary: critiqueSummary,
+          critiqueIssuesCount: critiqueIssuesCount
+          // Consider adding more structured critique info if needed,
+          // e.g., JSON.stringify(critique.issues.map(i => i.title))
         }
       });
     });

@@ -1,71 +1,118 @@
 import { NextRequest } from "next/server";
 import fs from "fs";
 import path from "path";
+import { CodebaseCritic } from '@/lib/codebase-critic';
+
+// Create a feedback directory if it doesn't exist
+const feedbackDir = path.join(process.cwd(), "data", "feedback");
+if (!fs.existsSync(feedbackDir)) {
+  fs.mkdirSync(feedbackDir, { recursive: true });
+}
+
+// Save feedback to a file
+async function saveFeedbackToFile(feedback: any) {
+  const filename = `feedback-${Date.now()}.json`;
+  const filepath = path.join(feedbackDir, filename);
+  
+  return new Promise<boolean>((resolve, reject) => {
+    fs.writeFile(filepath, JSON.stringify(feedback, null, 2), (err) => {
+      if (err) {
+        console.error("Error writing feedback:", err);
+        resolve(false);
+      } else {
+        resolve(true);
+      }
+    });
+  });
+}
 
 export async function POST(req: NextRequest) {
   try {
-    // Parse the request body
     const body = await req.json();
     
-    // Validate the request
+    // Validate core field
     if (typeof body.helpful !== "boolean") {
       return new Response(
-        JSON.stringify({ error: "Feedback must include a 'helpful' boolean field" }),
+        JSON.stringify({ error: "Invalid request body: 'helpful' boolean is required" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
     
-    // Get additional fields
-    const comments = typeof body.comments === "string" ? body.comments : "";
+    // Collect additional fields
+    const comments = body.comments || "";
     const timestamp = new Date().toISOString();
-    const feedback = {
+    const feedbackType = body.helpful ? "accept" : "reject";
+    const codeSnippet = body.codeSnippet;
+    const critique = body.critique;
+    
+    // Save feedback to file (optional logging/backup)
+    const savedToFile = await saveFeedbackToFile({
       helpful: body.helpful,
       comments,
       timestamp,
-      type: body.type || "codebase" // What type of critique (codebase, file, etc.)
-    };
+      codeSnippet,
+      critique
+    });
+    if (!savedToFile) {
+      console.warn("Failed to save feedback to file, but proceeding with learning loop.");
+      // Decide if this should be a hard failure or just a warning
+    }
     
-    // In a real app, you'd store this in a database
-    // For this demo, we'll just save to a file
-    await saveFeedback(feedback);
+    // Process feedback for the learning loop
+    let savedToLearningLoop = false;
+    // Add validation for required fields for learning loop
+    if (codeSnippet && typeof codeSnippet === 'string' && codeSnippet.trim() !== '' && critique && typeof critique === 'object') {
+      try {
+        // Create a minimal codebase structure for the critic (this seems okay as per analysis)
+        const mockStructure = {
+          files: [],
+          dependencyGraph: {},
+          fileTypes: {},
+          codeMetrics: {
+            totalLines: 0,
+            totalFiles: 0,
+            averageLinesPerFile: 0,
+            filesByExtension: {}
+          }
+        };
+        
+        const critic = new CodebaseCritic(mockStructure);
+        savedToLearningLoop = await critic.processFeedback(
+          feedbackType as 'accept' | 'reject' | 'ignore', 
+          codeSnippet, 
+          critique
+        );
+        if (!savedToLearningLoop) {
+          console.error("Processing feedback for learning loop failed.");
+          // Potentially return an error here if this step is critical
+        }
+      } catch (learningError) {
+        console.error("Error during feedback processing for learning loop:", learningError);
+        savedToLearningLoop = false; // Ensure it's marked as failed
+      }
+    } else {
+      console.warn("Skipping learning loop processing: codeSnippet or critique data missing/invalid.");
+      // If learning loop is essential, treat this as a failure
+      // savedToLearningLoop remains false
+    }
     
-    // Return success
-    return new Response(
-      JSON.stringify({ success: true }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
+    // Report success only if the critical learning loop processing succeeded
+    // Saving to file is treated as secondary/logging
+    const overallSuccess = savedToLearningLoop;
+    
+    return new Response(JSON.stringify({ 
+      success: overallSuccess,
+      savedToFile,
+      savedToLearningLoop
+    }), {
+      status: overallSuccess ? 200 : 500, // Return 500 if learning loop failed
+      headers: { "Content-Type": "application/json" }
+    });
   } catch (error) {
-    console.error("Error in feedback API:", error);
-    
+    console.error("Error in feedback API route:", error);
     return new Response(
-      JSON.stringify({ 
-        error: "Internal server error",
-        details: error instanceof Error ? error.message : "Unknown error"
-      }),
+      JSON.stringify({ error: "Internal server error" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
-}
-
-/**
- * Save feedback to a file
- */
-async function saveFeedback(feedback: any): Promise<void> {
-  // Create feedback directory if it doesn't exist
-  const feedbackDir = path.join(process.cwd(), "feedback");
-  if (!fs.existsSync(feedbackDir)) {
-    fs.mkdirSync(feedbackDir, { recursive: true });
-  }
-  
-  // Create a filename with the timestamp
-  const filename = `feedback-${new Date().getTime()}.json`;
-  const filePath = path.join(feedbackDir, filename);
-  
-  // Write the feedback to the file
-  return new Promise((resolve, reject) => {
-    fs.writeFile(filePath, JSON.stringify(feedback, null, 2), (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
 } 

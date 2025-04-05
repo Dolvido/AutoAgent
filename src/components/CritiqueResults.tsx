@@ -8,6 +8,8 @@ export interface CritiqueResult {
   summary: string;
   issues: CritiqueIssue[];
   language: string;
+  strengths?: string[];
+  improvement_areas?: string[];
   timestamp: string;
 }
 
@@ -91,6 +93,19 @@ export default function CritiqueResults({
         <p className="text-gray-700 dark:text-gray-300">{critique.summary}</p>
       </div>
 
+      {critique.strengths && critique.strengths.length > 0 && (
+        <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+          <h3 className="text-lg font-medium text-green-800 dark:text-green-300 mb-2">Strengths</h3>
+          <ul className="list-disc pl-5 space-y-1">
+            {critique.strengths.map((strength, index) => (
+              <li key={index} className="text-green-700 dark:text-green-400">
+                {strength}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="mb-6">
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-lg font-medium">Issues ({critique.issues.length})</h3>
@@ -102,17 +117,35 @@ export default function CritiqueResults({
           </button>
         </div>
 
-        {critique.issues.map((issue) => (
-          <CritiqueCard
-            key={issue.id}
-            issue={issue}
-            onAccept={handleAccept}
-            onReject={handleReject}
-            onIgnore={handleIgnore}
-            onCopyFix={onCopyFix}
-          />
-        ))}
+        {/* Map over critique.issues only if it exists and is an array */}
+        {Array.isArray(critique.issues) && critique.issues.length > 0 ? (
+          critique.issues.map((issue) => (
+            <CritiqueCard
+              key={issue.id}
+              issue={issue}
+              onAccept={handleAccept}
+              onReject={handleReject}
+              onIgnore={handleIgnore}
+              onCopyFix={onCopyFix}
+            />
+          ))
+        ) : (
+          <p className="text-gray-500 dark:text-gray-400 italic">No issues found.</p>
+        )}
       </div>
+
+      {critique.improvement_areas && critique.improvement_areas.length > 0 && (
+        <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+          <h3 className="text-lg font-medium text-yellow-800 dark:text-yellow-300 mb-2">Areas for Improvement</h3>
+          <ul className="list-disc pl-5 space-y-1">
+            {critique.improvement_areas.map((area, index) => (
+              <li key={index} className="text-yellow-700 dark:text-yellow-400">
+                {area}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="text-xs text-gray-500 dark:text-gray-400">
         Critiqued on {new Date(critique.timestamp).toLocaleString()}
