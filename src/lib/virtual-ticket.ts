@@ -3,6 +3,7 @@ import type { CritiqueResult } from '@/components/CritiqueResults';
 import type { CritiqueIssue } from '@/components/CritiqueCard';
 import fs from 'fs';
 import path from 'path';
+import { findRelevantFiles } from './code-rag';
 
 // Use CritiqueIssue as Issue for consistency with existing code
 type Issue = CritiqueIssue;
@@ -72,6 +73,54 @@ function isPathWritable(directory: string): boolean {
 }
 
 /**
+ * Validates affected files array with RAG enhancement
+ */
+async function validateAffectedFiles(
+  files?: any,
+  issue?: any,
+  basePath?: string
+): Promise<string[]> {
+  console.log(`Validating affected files:`, files);
+  
+  // Case 1: If we have valid files array, use it
+  if (files && Array.isArray(files) && files.length > 0) {
+    const validFiles = files
+      .filter(file => file && typeof file === 'string')
+      .map(file => String(file));
+      
+    if (validFiles.length > 0) {
+      console.log(`Using provided affected files: ${validFiles.join(', ')}`);
+      return validFiles;
+    }
+  }
+  
+  // Case 2: If we have issue details and basePath, try to find relevant files
+  if (issue && basePath && fs.existsSync(basePath)) {
+    console.log(`No valid affected files provided. Using RAG to find relevant files for issue "${issue.title}"`);
+    try {
+      const relevantFiles = await findRelevantFiles(
+        { 
+          title: issue.title || '', 
+          description: issue.description || '' 
+        }, 
+        basePath
+      );
+      
+      if (relevantFiles && relevantFiles.length > 0) {
+        console.log(`RAG found ${relevantFiles.length} relevant files: ${relevantFiles.join(', ')}`);
+        return relevantFiles;
+      }
+    } catch (error) {
+      console.error('Error finding relevant files with RAG:', error);
+    }
+  }
+  
+  // Case 3: Fallback to 'unknown' if nothing else worked
+  console.log(`No affected files found. Using "unknown" as placeholder.`);
+  return ['unknown'];
+}
+
+/**
  * Creates a virtual ticket from a critique issue
  */
 export async function createTicketFromIssue(
@@ -83,8 +132,7 @@ export async function createTicketFromIssue(
   console.log(`Creating ticket for issue "${issue.title}" affecting file "${filePath}"`);
   const opts = { ...DEFAULT_OPTIONS, ...options };
   
-  // Check if the storage directory is writable
-  console.log(`Checking storage directory: ${opts.storageDir}`);
+  // Check storage directory is writable
   const isWritable = isPathWritable(opts.storageDir!);
   if (!isWritable) {
     console.error(`Storage directory ${opts.storageDir} is not writable. Trying alternate location.`);
@@ -102,6 +150,14 @@ export async function createTicketFromIssue(
     }
   }
   
+  // If filePath is 'unknown', try to find affected files with RAG
+  let affectedFiles: string[];
+  if (filePath === 'unknown' && basePath) {
+    affectedFiles = await validateAffectedFiles(null, issue, basePath);
+  } else {
+    affectedFiles = [filePath];
+  }
+  
   // Create the ticket object
   const ticket: VirtualTicket = {
     id: `VT-${uuidv4().slice(0, 8)}`,
@@ -110,11 +166,11 @@ export async function createTicketFromIssue(
     created: new Date().toISOString(),
     status: 'open',
     sourceIssue: issue,
-    affectedFiles: [filePath],
+    affectedFiles: affectedFiles,
     basePath
   };
   
-  console.log(`Ticket created with ID: ${ticket.id}`);
+  console.log(`Ticket created with ID: ${ticket.id} for files: ${affectedFiles.join(', ')}`);
   
   // Save the ticket
   console.log(`Saving ticket to disk...`);

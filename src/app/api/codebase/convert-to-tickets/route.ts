@@ -122,22 +122,29 @@ export async function POST(request: NextRequest) {
         
         console.log(`Validated issue has ${validatedIssue.affectedFiles.length} affected files:`, validatedIssue.affectedFiles);
         
-        // For each file affected by the issue, create a separate ticket
+        // Handle ticket creation based on affected files
         if (validatedIssue.affectedFiles.length === 0) {
-          console.log("Issue has no affected files, creating a single ticket with 'unknown' file");
-          const ticket = await createTicketFromIssue(validatedIssue, 'unknown', {}, basePath);
-          ticketIds.push(ticket.id);
-          console.log(`Created ticket: ${ticket.id}`);
+          console.log("Issue has no affected files, creating a single ticket with RAG-enhanced file detection");
+          try {
+            // Pass the full issue object to allow RAG-based file detection
+            const ticket = await createTicketFromIssue(validatedIssue, 'unknown', {}, basePath);
+            ticketIds.push(ticket.id);
+            console.log(`Created ticket: ${ticket.id}`);
+          } catch (ticketError: any) {
+            console.error(`Error creating ticket:`, ticketError);
+            errors.push(`Failed to create ticket: ${ticketError.message}`);
+          }
         } else {
           for (const filePath of validatedIssue.affectedFiles) {
             console.log(`Creating ticket for file: ${filePath}`);
             try {
+              // Pass the full issue object to allow RAG enhancement if needed
               const ticket = await createTicketFromIssue(validatedIssue, filePath, {}, basePath);
               ticketIds.push(ticket.id);
               console.log(`Created ticket: ${ticket.id}`);
-            } catch (ticketError) {
+            } catch (ticketError: any) {
               console.error(`Error creating ticket for file ${filePath}:`, ticketError);
-              errors.push(`Failed to create ticket for ${filePath}: ${ticketError}`);
+              errors.push(`Failed to create ticket for ${filePath}: ${ticketError.message}`);
             }
           }
         }
