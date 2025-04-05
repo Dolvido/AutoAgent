@@ -64,3 +64,5 @@ logs/
 
 # Transient data
 data/
+
+test_project/
