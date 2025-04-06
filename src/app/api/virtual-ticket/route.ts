@@ -1,3 +1,5 @@
+"use server";
+
 import { NextRequest, NextResponse } from 'next/server';
 import { 
   createTicketFromIssue, 
@@ -5,8 +7,12 @@ import {
   getTicket, 
   updateTicketWithModification,
   completeTicket,
-  rejectTicket
+  rejectTicket,
+  VirtualTicket
 } from '@/lib/virtual-ticket';
+import fs from 'node:fs';
+import path from 'node:path';
+import { execSync } from 'child_process';
 
 // GET /api/virtual-ticket - Get all tickets
 export async function GET(request: NextRequest) {
@@ -33,9 +39,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(tickets);
     }
   } catch (error: any) {
-    console.error('API error in virtual-ticket GET route:', error);
+    console.error('Error fetching tickets:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to process request' },
+      { error: error.message || 'Failed to fetch tickets' },
       { status: 500 }
     );
   }
@@ -45,24 +51,70 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { issue, filePath, basePath } = body;
-    
+    const { issue, filePath, code, language, customFilename } = body;
+
     // Validate required fields
-    if (!issue || !filePath) {
+    if (!issue) {
       return NextResponse.json(
-        { error: 'Missing required fields: issue, filePath' },
+        { error: 'Missing required field: issue' },
         { status: 400 }
       );
     }
+
+    // Handle the file path directly if it's a custom filename
+    let actualFilePath = filePath || 'unknown';
     
-    // Create the ticket
-    const ticket = await createTicketFromIssue(issue, filePath, {}, basePath);
+    // If this is not a custom filename and code is provided, create a temporary file
+    if (!customFilename && code && filePath !== 'unknown') {
+      try {
+        // Create temp directory if it doesn't exist
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        // Save the code to a temporary file
+        const tempFilePath = path.join(tempDir, filePath);
+        fs.writeFileSync(tempFilePath, code);
+        actualFilePath = tempFilePath;
+        
+        console.log(`Saved code to temporary file: ${tempFilePath}`);
+      } catch (error) {
+        console.error('Error saving code to temp file:', error);
+        // Continue with original filePath if there's an error
+      }
+    }
+
+    // Create ticket with simplified approach
+    const ticket = await createTicketFromIssue(
+      issue,
+      actualFilePath,
+      {},
+      // Only pass basePath if not using custom filename
+      customFilename ? undefined : process.cwd()
+    );
+
+    // Verify Git repository exists before attempting operations
+    const isGitRepo = checkGitRepo(process.cwd());
     
+    if (isGitRepo && ticket.severity === 'high') {
+      // For high severity issues, create a feature branch automatically
+      try {
+        const branchName = createFeatureBranch(ticket, process.cwd());
+        ticket.gitBranch = branchName;
+        
+        console.log(`Created Git branch "${branchName}" for ticket ${ticket.id}`);
+      } catch (gitError: any) {
+        console.error('Error creating Git branch:', gitError);
+        // Continue even if Git operations fail - the ticket itself is still valid
+      }
+    }
+
     return NextResponse.json(ticket);
   } catch (error: any) {
-    console.error('API error in virtual-ticket POST route:', error);
+    console.error('Error creating ticket:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to process request' },
+      { error: error.message || 'Failed to create ticket' },
       { status: 500 }
     );
   }
@@ -133,5 +185,62 @@ export async function PATCH(request: NextRequest) {
       { error: error.message || 'Failed to process request' },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Create a feature branch for a ticket
+ */
+function createFeatureBranch(ticket: VirtualTicket, workingDir: string): string {
+  try {
+    // Get current branch
+    const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+      cwd: workingDir,
+      encoding: 'utf-8'
+    }).trim();
+    
+    // Create a sanitized branch name
+    const ticketId = ticket.id.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase();
+    const titleSlug = ticket.title
+      .toLowerCase()
+      .replace(/[^a-zA-Z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .slice(0, 30); // Keep branch name reasonably short
+    
+    const branchName = `fix/${ticketId}-${titleSlug}`;
+    
+    // Check if branch already exists
+    const branches = execSync('git branch', {
+      cwd: workingDir,
+      encoding: 'utf-8'
+    });
+    
+    if (branches.includes(branchName)) {
+      console.log(`Branch ${branchName} already exists, using it`);
+      return branchName;
+    }
+    
+    // Create and checkout new branch
+    execSync(`git checkout -b ${branchName}`, {
+      cwd: workingDir
+    });
+    
+    console.log(`Created and checked out branch: ${branchName}`);
+    return branchName;
+  } catch (error: any) {
+    console.error('Error creating feature branch:', error);
+    throw new Error(`Failed to create Git branch: ${error.message}`);
+  }
+}
+
+/**
+ * Check if directory is a Git repository
+ */
+function checkGitRepo(dir: string): boolean {
+  try {
+    const gitDir = path.join(dir, '.git');
+    return fs.existsSync(gitDir) && fs.statSync(gitDir).isDirectory();
+  } catch (error) {
+    return false;
   }
 } 

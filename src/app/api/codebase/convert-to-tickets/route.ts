@@ -62,13 +62,21 @@ function validateAffectedFiles(files?: any): string[] {
   if (!files) return ['unknown'];
   
   if (!Array.isArray(files)) {
-    return [String(files)]; // Convert to string array if not already
+    const fileStr = String(files);
+    return fileStr === 'unknown' ? [] : [fileStr]; // Return empty array if 'unknown' to trigger RAG file detection
   }
   
-  // Filter invalid file values
-  return files
+  // Filter invalid file values and check for 'unknown' values
+  const validFiles = files
     .filter(file => file && typeof file === 'string')
     .map(file => String(file));
+    
+  // If only 'unknown' files are present, return empty array to trigger RAG file detection
+  if (validFiles.length === 1 && validFiles[0] === 'unknown') {
+    return [];
+  }
+    
+  return validFiles;
 }
 
 export async function POST(request: NextRequest) {
@@ -122,9 +130,10 @@ export async function POST(request: NextRequest) {
         
         console.log(`Validated issue has ${validatedIssue.affectedFiles.length} affected files:`, validatedIssue.affectedFiles);
         
-        // Handle ticket creation based on affected files
-        if (validatedIssue.affectedFiles.length === 0) {
-          console.log("Issue has no affected files, creating a single ticket with RAG-enhanced file detection");
+        // Always use RAG-enhanced file detection when basePath is provided
+        if (validatedIssue.affectedFiles.length === 0 || 
+            (validatedIssue.affectedFiles.length === 1 && validatedIssue.affectedFiles[0] === 'unknown')) {
+          console.log("Issue has no valid affected files, creating a single ticket with RAG-enhanced file detection");
           try {
             // Pass the full issue object to allow RAG-based file detection
             const ticket = await createTicketFromIssue(validatedIssue, 'unknown', {}, basePath);

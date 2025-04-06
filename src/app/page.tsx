@@ -5,6 +5,9 @@ import dynamic from "next/dynamic";
 import CritiqueResults, { CritiqueResult } from "../components/CritiqueResults";
 import FileUpload from "../components/FileUpload";
 import Navigation from "../components/Navigation";
+import CodeModification from "../components/CodeModification";
+import { CritiqueIssue } from "../components/CritiqueCard";
+import { createTicketFromIssue } from "@/lib/virtual-ticket";
 
 // Dynamically import CodeEditor with no SSR to prevent hydration issues
 const CodeEditor = dynamic(() => import("../components/CodeEditor"), {
@@ -18,6 +21,10 @@ export default function Home() {
   const [critique, setCritique] = useState<CritiqueResult | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [directoryHandle, setDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  // States for fix proposal modal
+  const [isFixProposalOpen, setIsFixProposalOpen] = useState(false);
+  const [selectedIssue, setSelectedIssue] = useState<CritiqueIssue | null>(null);
+  const [isCreatingTicket, setIsCreatingTicket] = useState(false);
 
   // Toggle dark mode
   const toggleDarkMode = () => {
@@ -116,6 +123,127 @@ export default function Home() {
     }, 1500);
   };
 
+  // Handle view fix proposal
+  const handleViewFixProposal = async (issue: CritiqueIssue) => {
+    setSelectedIssue(issue);
+    setIsFixProposalOpen(true);
+    
+    // If the user opens a fix proposal for a high-severity issue, 
+    // automatically create a virtual ticket in the background
+    if (issue.severity === "high" && !isCreatingTicket) {
+      try {
+        setIsCreatingTicket(true);
+        
+        // Create a more descriptive filename based on the issue
+        let filePath = "unknown";
+        
+        // If we have code, create a recognizable filename
+        if (code.trim()) {
+          // Create a filename based on the issue title and language
+          const sanitizedTitle = issue.title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .substring(0, 30);
+          
+          filePath = `${sanitizedTitle}.${language}`;
+          console.log(`Created filename: ${filePath}`);
+        }
+        
+        // Create a virtual ticket via API
+        const response = await fetch('/api/virtual-ticket', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            issue,
+            filePath,
+            code,
+            language,
+            // Don't send basePath as it's likely causing issues
+            customFilename: true // Flag to indicate we're using a custom filename
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error ${response.status}`);
+        }
+
+        const ticket = await response.json();
+        console.log("Created virtual ticket for high-severity issue:", ticket);
+        
+        // Show a success message
+        alert(`Created virtual ticket: ${ticket.id} for issue: ${issue.title}`);
+      } catch (error) {
+        console.error("Failed to create virtual ticket:", error);
+      } finally {
+        setIsCreatingTicket(false);
+      }
+    }
+  };
+
+  // Handle apply code modification
+  const handleApplyModification = (modifiedCode: string) => {
+    // Update the code in the editor
+    setCode(modifiedCode);
+    // Close the modal
+    setIsFixProposalOpen(false);
+    setSelectedIssue(null);
+  };
+
+  // Handle creating a ticket from an issue
+  const handleCreateTicket = async (issue: CritiqueIssue) => {
+    try {
+      setIsLoading(true);
+      
+      // Create a more descriptive filename based on the issue
+      let filePath = "unknown";
+      
+      // If we have code, create a recognizable filename
+      if (code.trim()) {
+        // Create a filename based on the issue title and language
+        const sanitizedTitle = issue.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .substring(0, 30);
+        
+        filePath = `${sanitizedTitle}.${language}`;
+        console.log(`Created filename: ${filePath}`);
+      }
+      
+      // Create a virtual ticket via API
+      const response = await fetch('/api/virtual-ticket', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          issue,
+          filePath,
+          code,
+          language,
+          // Don't send basePath as it's likely causing issues
+          customFilename: true // Flag to indicate we're using a custom filename
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+
+      const ticket = await response.json();
+      console.log("Created virtual ticket:", ticket);
+      
+      // Show a success message
+      alert(`Created virtual ticket: ${ticket.id}\nView it in the Virtual Tickets page`);
+    } catch (error) {
+      console.error("Failed to create virtual ticket:", error);
+      alert("Failed to create ticket. See console for details.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className={`flex flex-col min-h-screen ${isDarkMode ? 'dark' : ''}`}>
       <header className="border-b border-gray-200 dark:border-gray-800">
@@ -201,6 +329,8 @@ export default function Home() {
                 onFeedback={handleFeedback}
                 onCopyFix={handleCopyFix}
                 onRegenerate={handleRegenerate}
+                onViewFixProposal={handleViewFixProposal}
+                onCreateTicket={handleCreateTicket}
               />
             </div>
           </div>
@@ -227,6 +357,40 @@ export default function Home() {
           Auto-Critic - Offline AI-powered code critique assistant
         </div>
       </footer>
+
+      {/* Fix Proposal Modal */}
+      {isFixProposalOpen && selectedIssue && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-4xl w-full h-[80vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
+              <h3 className="text-lg font-medium">Fix Proposal</h3>
+              <button 
+                onClick={() => {
+                  setIsFixProposalOpen(false);
+                  setSelectedIssue(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <CodeModification
+                originalCode={code}
+                issue={selectedIssue}
+                language={language}
+                onApply={handleApplyModification}
+                onCancel={() => {
+                  setIsFixProposalOpen(false);
+                  setSelectedIssue(null);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -19,6 +19,8 @@ interface CritiqueResultsProps {
   onFeedback: (type: "accept" | "reject" | "ignore", issueId: string) => void;
   onCopyFix: (fix: string) => void;
   onRegenerate: () => void;
+  onViewFixProposal?: (issue: CritiqueIssue) => void;
+  onCreateTicket?: (issue: CritiqueIssue) => void;
 }
 
 export default function CritiqueResults({
@@ -27,6 +29,8 @@ export default function CritiqueResults({
   onFeedback,
   onCopyFix,
   onRegenerate,
+  onViewFixProposal,
+  onCreateTicket,
 }: CritiqueResultsProps) {
   // Handle feedback actions
   const handleAccept = (id: string) => {
@@ -127,6 +131,8 @@ export default function CritiqueResults({
               onReject={handleReject}
               onIgnore={handleIgnore}
               onCopyFix={onCopyFix}
+              onViewFixProposal={onViewFixProposal}
+              onCreateTicket={onCreateTicket}
             />
           ))
         ) : (

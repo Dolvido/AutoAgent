@@ -1,3 +1,5 @@
+"use server";
+
 import { v4 as uuidv4 } from 'uuid';
 import { Ollama } from '@langchain/community/llms/ollama';
 import { PromptTemplate } from '@langchain/core/prompts';

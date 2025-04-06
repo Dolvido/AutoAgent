@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 // import ReactDiffViewer from 'react-diff-viewer'; // Import the viewer
 import type { VirtualTicket } from '@/lib/virtual-ticket';
+import type { CritiqueIssue as Issue } from '@/components/CritiqueCard';
+// Replace direct import with fetching from API
+// import { getTicket } from '@/lib/virtual-ticket';
 
 interface VirtualTicketManagerProps {
   onClose?: () => void;
@@ -27,6 +30,38 @@ const TicketItem = ({
   ticket: VirtualTicket; 
   onSelect: (ticket: VirtualTicket) => void;
 }) => {
+  // Format affected files for display
+  const formatAffectedFiles = (files: string[], sourceIssue: Issue): string => {
+    if (!files || files.length === 0) {
+      return "Click to generate affected files";
+    }
+    
+    if (files.length === 1 && files[0] === 'unknown') {
+      // Try to extract file hints from the issue description
+      const description = sourceIssue.description.toLowerCase();
+      
+      if (description.includes('function') && description.match(/`\w+`/)) {
+        // Extract function name
+        const functionMatch = description.match(/`(\w+)`/);
+        if (functionMatch && functionMatch[1]) {
+          return `Function: ${functionMatch[1]} (click to find file)`;
+        }
+      }
+      
+      // Extract context from source issue
+      const contextWords = ['test', 'config', 'api', 'function', 'component', 'class', 'module'];
+      for (const word of contextWords) {
+        if (description.includes(word)) {
+          return `${word.charAt(0).toUpperCase() + word.slice(1)} code (click to locate)`;
+        }
+      }
+      
+      return "Click to analyze affected files";
+    }
+    
+    return files.join(', ');
+  };
+
   return (
     <div 
       className="p-3 border rounded-md mb-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -41,9 +76,17 @@ const TicketItem = ({
           {formatStatus(ticket.status)}
         </span>
       </div>
-      <div className="mt-2 text-sm">{ticket.description}</div>
-      <div className="mt-2 text-xs text-gray-500">
-        File: {ticket.affectedFiles.join(', ')}
+      <div className="mt-2 text-sm">{ticket.description.split('\n\n')[0]}</div>
+      <div className="mt-2 text-xs flex items-center">
+        <span className="text-gray-500 mr-1">File:</span>
+        <span className={`${(ticket.affectedFiles.length === 1 && ticket.affectedFiles[0] === 'unknown') ? 'text-blue-500 italic' : 'text-gray-500'}`}>
+          {formatAffectedFiles(ticket.affectedFiles, ticket.sourceIssue)}
+        </span>
+        {(ticket.affectedFiles.length === 1 && ticket.affectedFiles[0] === 'unknown') && (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 ml-1 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+        )}
       </div>
       <div className="mt-1 text-xs text-gray-500">
         Created: {new Date(ticket.created).toLocaleString()}
@@ -64,6 +107,84 @@ const TicketDetail = ({
   onClose: () => void;
   onGenerateFix: (ticket: VirtualTicket) => void;
 }) => {
+  // Format affected files display
+  const formatAffectedFiles = (files: string[]): JSX.Element => {
+    if (!files || files.length === 0) {
+      return (
+        <div className="space-y-2">
+          <p className="text-sm italic">Files need to be identified before generating a fix</p>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onGenerateFix(ticket);
+            }}
+            className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-800/50"
+          >
+            Find Affected Files
+          </button>
+        </div>
+      );
+    }
+    
+    if (files.length === 1 && files[0] === 'unknown') {
+      return (
+        <div className="space-y-2">
+          <p className="text-sm italic">
+            No specific files have been identified yet. Click "Generate Fix" to analyze the codebase
+            and locate the relevant files.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onGenerateFix(ticket);
+              }}
+              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-800/50"
+            >
+              Find Affected Files
+            </button>
+            {['test', 'model', 'controller', 'util', 'config'].map(fileType => (
+              <button
+                key={fileType}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // This would ideally search for files of specific type
+                  onGenerateFix(ticket);
+                }}
+                className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                Search {fileType.charAt(0).toUpperCase() + fileType.slice(1)} Files
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="space-y-2">
+        <ul className="text-sm list-disc list-inside">
+          {files.map((file, index) => (
+            <li key={index} className="mb-1">
+              <span className="font-mono text-xs bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">{file}</span>
+            </li>
+          ))}
+        </ul>
+        {ticket.status === 'open' && (
+          <div className="text-xs text-gray-500">
+            Click "Generate Fix" to analyze these files and create a solution
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Extract first paragraph of description for concise display
+  const shortDescription = ticket.description.split('\n\n')[0];
+  
+  // Extract additional sections like recommendations if present
+  const additionalSections = ticket.description.split('\n\n').slice(1);
+
   return (
     <div className="border rounded-lg shadow-sm">
       <div className="p-4 border-b">
@@ -81,16 +202,24 @@ const TicketDetail = ({
       <div className="p-4 space-y-4">
         <div>
           <h4 className="font-medium mb-1">Description</h4>
-          <p className="text-sm">{ticket.description}</p>
+          <p className="text-sm">{shortDescription}</p>
+          
+          {additionalSections.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+              {additionalSections.map((section, index) => (
+                <div key={index} className="text-sm mt-2">
+                  {section.split('\n').map((line, lineIndex) => (
+                    <p key={lineIndex} className={line.startsWith('**') ? 'font-medium mt-2' : 'ml-0'}>{line}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         
         <div>
           <h4 className="font-medium mb-1">Affected Files</h4>
-          <ul className="text-sm list-disc list-inside">
-            {ticket.affectedFiles.map((file, index) => (
-              <li key={index}>{file}</li>
-            ))}
-          </ul>
+          {formatAffectedFiles(ticket.affectedFiles)}
         </div>
         
         {ticket.modifiedCode && (
@@ -251,23 +380,14 @@ export default function VirtualTicketManager({ onClose }: VirtualTicketManagerPr
     setError(null);
     
     try {
-      // Check affected files
-      if (ticket.affectedFiles.length === 0) {
-        throw new Error('No affected files specified in ticket');
-      }
-      
-      // Don't join the path here, let the server handle it using the ticket's basePath
-      const filePath = ticket.affectedFiles[0];
-      
-      const response = await fetch('/api/generate-fix', {
+      const response = await fetch('/api/generate-patch', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           ticketId: ticket.id,
-          filePath: filePath,
-          description: ticket.sourceIssue.description
+          workingDir: ticket.basePath
         }),
       });
       
@@ -282,8 +402,18 @@ export default function VirtualTicketManager({ onClose }: VirtualTicketManagerPr
       // Refresh tickets to get the updated one
       fetchTickets();
       
-      // Update selected ticket
-      setSelectedTicket(result.ticket);
+      // Update selected ticket via API
+      if (result && result.ticketId) {
+        try {
+          const ticketResponse = await fetch(`/api/virtual-ticket/${result.ticketId}`);
+          if (ticketResponse.ok) {
+            const updatedTicket = await ticketResponse.json();
+            setSelectedTicket(updatedTicket);
+          }
+        } catch (err) {
+          console.error('Error fetching updated ticket:', err);
+        }
+      }
     } catch (err: any) {
       console.error('Error generating fix:', err);
       setError(err.message || 'Failed to generate fix');

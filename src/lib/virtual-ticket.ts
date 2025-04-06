@@ -1,8 +1,10 @@
+"use server";
+
 import { v4 as uuidv4 } from 'uuid';
 import type { CritiqueResult } from '@/components/CritiqueResults';
 import type { CritiqueIssue } from '@/components/CritiqueCard';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { findRelevantFiles } from './code-rag';
 
 // Use CritiqueIssue as Issue for consistency with existing code
@@ -15,8 +17,10 @@ export interface VirtualTicket {
   created: string;
   status: 'open' | 'in_progress' | 'completed' | 'rejected';
   sourceIssue: Issue;
+  severity: 'low' | 'medium' | 'high';
   affectedFiles: string[];
   basePath?: string;
+  gitBranch?: string;
   modifiedCode?: {
     id: string;
     originalCode: string;
@@ -84,8 +88,9 @@ async function validateAffectedFiles(
   
   // Case 1: If we have valid files array, use it
   if (files && Array.isArray(files) && files.length > 0) {
+    // Filter out 'unknown' values to trigger RAG search
     const validFiles = files
-      .filter(file => file && typeof file === 'string')
+      .filter(file => file && typeof file === 'string' && file !== 'unknown')
       .map(file => String(file));
       
     if (validFiles.length > 0) {
@@ -106,7 +111,8 @@ async function validateAffectedFiles(
         basePath
       );
       
-      if (relevantFiles && relevantFiles.length > 0) {
+      if (relevantFiles && relevantFiles.length > 0 && 
+          !(relevantFiles.length === 1 && relevantFiles[0] === 'unknown')) {
         console.log(`RAG found ${relevantFiles.length} relevant files: ${relevantFiles.join(', ')}`);
         return relevantFiles;
       }
@@ -156,8 +162,37 @@ export async function createTicketFromIssue(
   
   // Special handling for different issue types
   let affectedFiles: string[];
-  if (filePath === 'unknown') {
+  
+  // If the provided filePath is a full path, convert to relative
+  let normalizedFilePath = filePath;
+  
+  // If no basePath is provided, use the filePath directly (custom filename)
+  if (!basePath) {
+    affectedFiles = [filePath];
+    console.log(`Using custom file name: ${filePath}`);
+  } else if (basePath && filePath !== 'unknown') {
+    try {
+      if (fs.existsSync(filePath)) {
+        // Convert to relative path if it's a full path
+        if (path.isAbsolute(filePath)) {
+          normalizedFilePath = path.relative(basePath, filePath);
+        }
+        
+        // If this is a single file source, use it directly
+        affectedFiles = [normalizedFilePath];
+        console.log(`Using provided file path: ${normalizedFilePath}`);
+      } else {
+        // If the file doesn't exist, try to find relevant files
+        console.log(`File ${filePath} doesn't exist, trying to find relevant files`);
+        affectedFiles = await validateAffectedFiles(null, issue, basePath);
+      }
+    } catch (error) {
+      console.error(`Error normalizing file path: ${error}`);
+      affectedFiles = await validateAffectedFiles(null, issue, basePath);
+    }
+  } else if (filePath === 'unknown') {
     if (basePath) {
+      // Try to find relevant files based on issue type
       switch (issueType) {
         case 'analysis_error':
           // For analysis errors, try to focus on configuration files and logs
@@ -223,6 +258,7 @@ export async function createTicketFromIssue(
     created: new Date().toISOString(),
     status: 'open',
     sourceIssue: issue,
+    severity: issue.severity || 'medium',
     affectedFiles: affectedFiles,
     basePath
   };
@@ -720,4 +756,24 @@ async function saveTicket(
     console.error(`Error writing ticket to ${filePath}:`, error);
     throw new Error(`Failed to write ticket: ${error.message}`);
   }
+}
+
+/**
+ * Updates an existing ticket with new data
+ */
+export async function updateTicket(
+  ticket: VirtualTicket,
+  options: TicketSystemOptions = {}
+): Promise<VirtualTicket> {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  
+  // Ensure ticket has an ID
+  if (!ticket.id) {
+    throw new Error('Cannot update ticket without an ID');
+  }
+  
+  // Save the updated ticket
+  await saveTicket(ticket, opts);
+  
+  return ticket;
 } 

@@ -16,6 +16,8 @@ interface CritiqueCardProps {
   onReject: (id: string) => void;
   onIgnore: (id: string) => void;
   onCopyFix: (fix: string) => void;
+  onViewFixProposal?: (issue: CritiqueIssue) => void;
+  onCreateTicket?: (issue: CritiqueIssue) => void;
 }
 
 export default function CritiqueCard({
@@ -24,6 +26,8 @@ export default function CritiqueCard({
   onReject,
   onIgnore,
   onCopyFix,
+  onViewFixProposal,
+  onCreateTicket,
 }: CritiqueCardProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -120,6 +124,22 @@ export default function CritiqueCard({
             >
               Copy Fix
             </button>
+            {(issue.severity === "high" || issue.severity === "medium") && onViewFixProposal && (
+              <button
+                onClick={() => onViewFixProposal(issue)}
+                className="px-3 py-1.5 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 rounded-md text-sm hover:bg-purple-200 dark:hover:bg-purple-800"
+              >
+                View Fix Proposal
+              </button>
+            )}
+            {onCreateTicket && (
+              <button
+                onClick={() => onCreateTicket(issue)}
+                className="px-3 py-1.5 bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 rounded-md text-sm hover:bg-amber-200 dark:hover:bg-amber-800"
+              >
+                Create Ticket
+              </button>
+            )}
           </div>
         </div>
       )}
