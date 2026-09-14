@@ -7,7 +7,8 @@
     "build": "npm run copy-wasm && next build",
     "start": "next start",
     "lint": "next lint",
-    "copy-wasm": "node ./scripts/copy-wasm.js"
+    "copy-wasm": "node ./scripts/copy-wasm.js",
+    "test:vector-store": "node --experimental-strip-types --test tests/vector-store.test.cjs"
   },
   "dependencies": {
     "@langchain/community": "^0.3.39",
